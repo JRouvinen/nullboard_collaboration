@@ -10,7 +10,8 @@ The name also happens to abbreviate to [NB](https://en.wikipedia.org/wiki/Nota_b
 
 ## Dead simple
 
-* Single-page web app - just one HTML file, an ancient jQuery package and a webfont pack.
+* Single-page web app - just one HTML file. jQuery is inlined into it (see the note further
+  down), the webfont pack in `extras/` is optional.
 * Can be used completely offline. In fact, it's written exactly with this use in mind.
 
 ## Locally stored
@@ -100,7 +101,16 @@ one of them.
 
 ### Shared folder - no server to run
 
-Put `nullboard.html` and `extras/` on the shared drive, and everyone opens it from there.
+Put `nullboard.html` on the shared drive and everyone opens it from there. That single file
+is the whole app - jQuery is inlined, so nothing else has to load for it to work. `extras/`
+only holds the webfonts; without it you get the system font instead of Barlow, which is
+exactly why jQuery no longer lives there:
+
+> Opened from a network location, Chrome can refuse to load `file://` subresources. The
+> upstream build pulled jQuery from `code.jquery.com` when the local copy failed, which
+> needs internet access and otherwise leaves a page where nothing responds and nothing says
+> why. Inlined, a single file works from any share. If the app ever does fail to start, a red
+> bar across the top says what went wrong instead of failing silently.
 
 Open the config menu (the `≡` at the top right) → **Sync**, and fill in:
 
