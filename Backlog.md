@@ -67,6 +67,7 @@ Revise only with a reason; each unblocks a lot of code.
 | 4 — Polish | ✅ done |
 | 5 — Tests | ✅ done, 57/57 e2e checks |
 | 6 — Shared-folder sync, no server | ✅ done |
+| 7 — Who edited what | ✅ done |
 
 ---
 
@@ -391,6 +392,36 @@ the user pick it again (`showDirectoryPicker` would). Covered by the e2e with a 
 
 ---
 
+## Phase 7 — Who edited what — ✅ DONE
+
+Asked for after the office run: a per-browser name or tag, shown on each board and each task
+as "last edit by [name]".
+
+- [x] **Name** already existed as `conf.sync.who`; `NB.who()` is now the single accessor, and
+      it is the tag used for attribution. If sync is configured and the name is empty, the
+      status line says `set your name so edits say who made them` rather than guessing.
+- [x] `Note`, `List` and `Board` carry `by` + `at`. Optional fields in the blob - no
+      `blobVersion` bump, so old boards and old `.nbx` files load unchanged and simply show
+      no author.
+- [x] Attribution rides on the element, like `_text` already did: `showBoard()` renders
+      `_by`/`_at` onto the item, `stopEditing()` sets them when the text changes, and
+      `saveBoard()` reads them back. **Untouched items keep the author they were rendered
+      with** - the DOM scrape does not relabel the whole board on every save.
+- [x] Board header: `last edit by <name>, 5 min ago`, right-aligned under the title, hidden
+      when empty. Note: author in the corner on hover (`background: inherit`, so it reads in
+      the dark theme) plus the full text in the note's tooltip.
+- [x] Only **text** changes claim authorship. Moving notes between lists, the raw/collapsed
+      toggles and drags do not - otherwise glancing at a board would rewrite who did what.
+- [ ] Not done: the board-list menu still shows sync metadata (`bob, synced 5 min ago`) from
+      the store rather than from the blob. Same information, different source; harmless.
+
+Verified in `server/e2e.js` step 15 (11 checks): a new note is attributed to its writer; a
+second writer gets their own; editing a note reattributes **only that note** and leaves the
+other authors alone; the board header and the note tooltip agree; and the authors survive the
+trip through the shared file (`data.lists[].notes[].by` and `data.by`).
+
+---
+
 ## Dropped — do not re-add
 
 Costed in the previous plan, worthless at this cadence:
@@ -458,6 +489,7 @@ Costed in the previous plan, worthless at this cadence:
 | M3 (Ph 4) | board list metadata, debug flag, resolve link, team README | 1 d | ✅ |
 | M4 (Ph 5) | offline/reconnect + two-browser tests | 0.5 d | ✅ |
 | M5 (Ph 6) | shared-folder sync, no server process anywhere | 1 d | ✅ |
+| M6 (Ph 7) | per-note and per-board attribution | 0.5 d | ✅ |
 
 
 **~5-6 dev-days to a working multi-user board**, offline behaviour preserved. Roughly half

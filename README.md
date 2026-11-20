@@ -116,7 +116,7 @@ Open the config menu (the `≡` at the top right) → **Sync**, and fill in:
 
 | Field | Meaning |
 |---|---|
-| Name | how you appear as "last saved by ..." |
+| Name | your tag - how your edits are attributed (see below) |
 | **Choose shared folder...** | pick the folder on the share, e.g. `Z:\team boards` |
 
 That is the whole setup. Each board becomes one file, `board-<id>.json`, in that folder:
@@ -154,6 +154,23 @@ for a trusted team behind the LAN, not for the open internet.
 
 Clear the folder (and the Server/Token fields) to turn sharing off again. Boards you import
 with **Import boards...** are pushed to the shared copy straight away.
+
+### Who edited what
+
+Set **Name** in the Sync section once per browser - that is your tag on everything you
+touch. Attribution then shows up in two places:
+
+* the **board header** carries `last edit by <name>, 5 min ago`, updated on every save;
+* **hover a note** and its author appears in the note's bottom-right corner; the note's
+  tooltip carries the full text (`last edit by seppo, 2 h ago`).
+
+A note is only re-attributed when its **text** actually changes - creating it or editing it.
+Moving a note between lists, collapsing it or switching it to a raw note does not steal
+authorship, and saving one note never relabels the rest of the board. Notes written before
+this version have no author and show nothing.
+
+The name lives in this browser's localStorage, so it is per browser profile, not per person:
+if two people share a machine they share a name.
 
 ### Losing a board
 

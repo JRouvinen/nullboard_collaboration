@@ -375,6 +375,22 @@
 		margin-right: 5px;
 	}
 
+	/* who last touched this board, under its title */
+	.board > .head .by {
+		padding: 0 5px 2px;
+		text-align: right;
+		font-size: calc(10rem / 11);
+		line-height: calc(13 / 10);
+		opacity: 0.45;
+		white-space: pre;
+		overflow: hidden;
+		pointer-events: none;
+	}
+
+	.board > .head .by:empty {
+		display: none;
+	}
+
 	/***/
 	.board .lists-scroller {
 		height: auto;
@@ -561,6 +577,29 @@
 	}
 
 	/***/
+	/* who last touched this note, in the corner on hover - costs no layout */
+	.board .note .by {
+		position: absolute;
+		bottom: 0;
+		right: 3px;
+		opacity: 0;
+		transition: opacity 400ms;
+		font-size: calc(9rem / 11);
+		line-height: calc(12 / 9);
+		padding-left: 5px;
+		background: inherit;
+		pointer-events: none;
+	}
+
+	.board .note:hover .by {
+		opacity: 0.55;
+	}
+
+	.board .note.editing .by,
+	.board .note .by:empty {
+		display: none;
+	}
+
 	.board .note .ops {
 		position: absolute;
 		top: 0;
@@ -1714,6 +1753,7 @@
 			<div class=head>
 				<div class=text></div>
 				<input class=edit spellcheck=false placeholder='Name of the board'>
+				<div class=by></div>
 				<div class=menu>
 					<a href=# class=teaser>&equiv;</a>
 					<div class=bulk>
@@ -1749,6 +1789,7 @@
 		</div>
 
 		<div class=note>
+			<div class=by></div>
 			<div class=ops>
 				<a href=# class=teaser></a>
 				<div class=bulk>
@@ -2853,12 +2894,16 @@
 		this.text = text;
 		this.raw  = false;
 		this.min  = false;
+		this.by   = '';             // who last changed the text
+		this.at   = 0;              // when, ms
 	}
 
 	function List(title)
 	{
 		this.title = title;
 		this.notes = [ ];
+		this.by    = '';
+		this.at    = 0;
 
 		this.addNote = function(text)
 		{
@@ -2875,6 +2920,8 @@
 		this.revision = 0;
 		this.title    = title || '';
 		this.lists    = [ ];
+		this.by       = '';         // who last saved the board
+		this.at       = 0;
 
 		this.addList = function(title)
 		{
@@ -3434,6 +3481,10 @@
 				});
 
 				await this.poll();
+
+				// attribution is worthless without a name, so say so instead of guessing
+				if (! this.conf.who && this.status == 'ok')
+					this.setStatus('pending', 'set your name so edits say who made them');
 			}
 			finally
 			{
@@ -4481,16 +4532,26 @@
 			var $list = $(this);
 			var l = board.addList( getText($list.find('.head .text')) );
 
+			l.by = $list.attr('_by') || '';
+			l.at = +($list.attr('_at') || 0) || 0;
+
 			$list.find('.note').each(function(){
 				var $note = $(this)
 				var n = l.addNote( getText($note.find('.text')) );
 				n.raw = $note.hasClass('raw');
 				n.min = $note.hasClass('collapsed');
+				n.by  = $note.attr('_by') || '';
+				n.at  = +($note.attr('_at') || 0) || 0;
 			});
 		});
 
+		board.by = NB.who();
+		board.at = +new Date();
+
 		NB.storage.saveBoard(board);
 		NB.board = board;
+
+		setItemBy($board, board.by, board.at);
 
 		if (NB.sync)
 			NB.sync.touch(board.id);
@@ -4586,18 +4647,22 @@
 		$b[0].board_id = board.id;
 		setText( $b.find('.head .text'), board.title );
 
+		setItemBy($b, board.by, board.at);
+
 		board.lists.forEach(function(list){
 
 			var $l = $ldiv.clone();
 			var $l_notes = $l.find('.notes');
 
 			setText( $l.find('.head .text'), list.title );
+			setItemBy($l, list.by, list.at);
 
 			list.notes.forEach(function(n){
 				var $n = $ndiv.clone();
 				setText( $n.find('.text'), n.text );
 				if (n.raw) $n.addClass('raw');
 				if (n.min) $n.addClass('collapsed');
+				setItemBy($n, n.by, n.at);
 				$l_notes.append($n);
 			});
 
@@ -5326,6 +5391,33 @@
 		return $note.attr('_text');
 	}
 
+	/*
+	 *	attribution lives on the element, like _text: saveBoard() reads it back into the
+	 *	blob. Notes that nobody touched keep the by they were rendered with.
+	 */
+	function setItemBy($item, by, at)
+	{
+		$item.attr('_by', by || '');
+		$item.attr('_at', at || 0);
+
+		if ($item.hasClass('note'))
+		{
+			$item.find('.by').text(by || '');
+			$item.attr('title', by ? `last edit by ${by}${at ? ', ' + relTime(at) : ''}` : '');
+		}
+		else
+		if ($item.hasClass('board'))
+		{
+			$item.children('.head').find('.by')
+				.text(by ? `last edit by ${by}${at ? ', ' + relTime(at) : ''}` : '');
+		}
+		else
+		if ($item.hasClass('list'))
+		{
+			$item.attr('title', by ? `last edit by ${by}${at ? ', ' + relTime(at) : ''}` : '');
+		}
+	}
+
 	function removeTextSelection()
 	{
 		if (window.getSelection) { window.getSelection().removeAllRanges(); }
@@ -5401,6 +5493,7 @@
 		if (text_now != text_was || brand_new)
 		{
 			setText( $text, text_now );
+			setItemBy($item, NB.who(), +new Date());
 
 			if ($item.parent().hasClass('board'))
 				NB.board.title = text_now;
@@ -6370,7 +6463,7 @@
 	var NB =
 	{
 		codeVersion: 20231105,
-		version: '0.5.2',                  // this fork, shown next to the logo
+		version: '0.6.0',                  // this fork, shown next to the logo
 		blobVersion: 20190412, // board blob format in Storage
 		board: null,
 		storage: null,
@@ -6385,6 +6478,12 @@
 			var conf = this.storage.getConfig();
 			conf[name] = val;
 			return this.storage.saveConfig();
+		},
+
+		who: function()
+		{
+			var conf = this.storage.getConfig().sync;
+			return (conf && conf.who) || '';
 		},
 
 		/*

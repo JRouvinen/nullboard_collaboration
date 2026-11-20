@@ -669,6 +669,111 @@ async function main()
 		check(/not available here/.test(await cdp.eval('NB.sync.detail')),
 			'a folder this browser has no handle for says so',
 			await cdp.eval('NB.sync.status + " / " + NB.sync.detail'));
+
+		console.log('\n15. who edited what');
+
+		// re-attach the folder so pushes happen again
+		await cdp.eval(`(async function(){
+			var root = await navigator.storage.getDirectory();
+			var dir  = await root.getDirectoryHandle('share');
+
+			NB.sync.stop();
+			NB.sync._store     = undefined;
+			NB.sync.dir        = dir;
+			NB.sync.pending    = null;
+			NB.sync.storeError = '';
+			await NB.sync.start();
+		})()`);
+
+		check(await cdp.eval('NB.sync.status') == 'ok', 'sync is back on the folder',
+			await cdp.eval('NB.sync.status + " / " + NB.sync.detail'));
+
+		const setName = who => cdp.eval(`
+			var c = NB.storage.getConfig().sync;
+			c.who = ${JSON.stringify(who)};
+			NB.storage.saveConfig();
+		`);
+
+		const writeNote = (text, previous) => cdp.eval(`
+			var $l = $('.wrap .board .list').first();
+
+			if (${JSON.stringify(previous || '')})
+			{
+				var $n = $('.wrap .board .note').filter(function(){
+					return $(this).find('.text').attr('_text') == ${JSON.stringify(previous || '')};
+				});
+			}
+			else
+			{
+				addNote($l);
+				var $n = $l.find('.note').last();
+			}
+
+			$n.find('.text').click();
+			$n.find('.edit').val(${JSON.stringify(text)});
+			stopEditing($n.find('.edit'), false, false);
+		`);
+
+		const byOf = text => cdp.eval(`
+			$('.wrap .board .note').filter(function(){
+				return $(this).find('.text').attr('_text') == ${JSON.stringify(text)};
+			}).find('.by').text()
+		`);
+
+		await setName('alice');
+		await writeNote('alice note');
+		check(await byOf('alice note') == 'alice', 'a new note is attributed to whoever wrote it', await byOf('alice note'));
+
+		await setName('bob');
+		await writeNote('bob note');
+		check(await byOf('bob note') == 'bob', 'and so is the next one, by someone else', await byOf('bob note'));
+
+		// the trap: saveBoard() rebuilds from the DOM, so an untouched note must NOT be
+		// relabelled with the current name
+		await setName('alice');
+		await writeNote('alice note v2', 'alice note');
+
+		check(await byOf('alice note v2') == 'alice', 'editing a note reattributes that note');
+		check(await byOf('bob note') == 'bob', "and leaves everyone else's notes alone", await byOf('bob note'));
+
+		check(/last edit by alice/.test(await cdp.eval('$(".wrap .board > .head .by").text()')),
+			'the board header says who touched it last',
+			await cdp.eval('$(".wrap .board > .head .by").text()'));
+
+		check(/last edit by bob/.test(await cdp.eval(`
+			$('.wrap .board .note').filter(function(){
+				return $(this).find('.text').attr('_text') == 'bob note';
+			}).attr('title') || ''
+		`)), 'a note carries its author in the tooltip too');
+
+		// and it has to survive the round trip through the shared folder
+		check(await cdp.eval(`
+			(function(){
+				var $n = $('.wrap .board .note').filter(function(){
+					return $(this).find('.text').attr('_text') == 'alice note v2';
+				});
+				return $n.attr('_by') + '/' + $n.attr('_at');
+			})()
+		`).then(v => /^alice\/\d+$/.test(v)), 'the note element carries who and when for saveBoard()');
+
+		const attributed = await waitFor(async () => {
+			const doc = JSON.parse(await cdp.eval(`(async function(){
+				var root = await navigator.storage.getDirectory();
+				var dir  = await root.getDirectoryHandle('share');
+				var fh   = await dir.getFileHandle('board-${openId}.json');
+				return await (await fh.getFile()).text();
+			})()`));
+
+			const notes = doc.data.lists.flatMap(l => l.notes);
+
+			return notes.some(n => n.by == 'bob' && n.text == 'bob note') ? doc : null;
+		}, 20000, "the attribution to reach the shared file");
+
+		const attributedNotes = attributed.data.lists.flatMap(l => l.notes);
+
+		check(attributedNotes.find(n => n.text == 'alice note v2').by == 'alice', 'the file keeps per-note authors');
+		check(attributedNotes.find(n => n.text == 'bob note').by == 'bob', 'each note keeps its own, not the last writer');
+		check(attributed.data.by == 'alice', 'and the board itself records who saved it', attributed.data.by);
 	}
 	finally
 	{
