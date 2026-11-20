@@ -366,14 +366,18 @@ Measured on a `file://` page (the real deployment), separately:
 
 OPFS being blocked is why the folder transport cannot be exercised headlessly *from a
 `file://` page*. It does not block the picked-folder path, which is a different API and was
-shown to be permitted - but it does mean **the last mile stays manual**: on one Windows
-machine, pick the real share, restart the browser, and see whether the permission survives.
-If it does not, it is one click per session and the status line already asks for it.
+shown to be permitted.
+
+**Answered by the office test (0.5.2):** the *handle* persists across a reload, the
+*permission* does not - `queryPermission` returns `prompt`. So the flow is one click per page
+load, and it re-arms the **same** folder through `requestPermission()` rather than making
+the user pick it again (`showDirectoryPicker` would). Covered by the e2e with a handle whose
+`queryPermission`/`requestPermission` are stubbed: `pending` + bar -> one click -> `ok`.
 
 ### Risks
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Folder permission does not survive a browser restart on `file://` | medium | the handle itself does persist (IndexedDB works on `file://`); if the *permission* does not, it is one click per session and the status line asks for it |
+| Folder permission does not survive a page load | resolved in 0.5.2 | the handle persists (IndexedDB), the *grant* does not: the app now re-requests it on the same handle from one click, via a bar at the top of the page, instead of asking the user to pick the folder again |
 | SMB `createWritable` close is not atomic | high | one writer per file, so a torn read is only ever us reading *someone else's* file - and an unreadable file is reported as `error` and never overwritten |
 | Somebody edits a board that is not theirs | medium | revision check + existing conflict dialog, unchanged |
 | Firefox | low | server mode or manual `.nbx`; stated in the README |

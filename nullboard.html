@@ -1876,6 +1876,50 @@
 
 	if (! window.jQuery)
 		nbFatal('jQuery did not load');
+
+	/*
+	 *	one click to let sync write to the shared folder again. Chrome forgets the grant
+	 *	when the page is reloaded, and requestPermission() needs a real gesture.
+	 */
+	function showFolderBar(folder)
+	{
+		if (document.getElementById('nb-folder-bar') || ! document.body)
+			return;
+
+		var div = document.createElement('div');
+
+		div.id = 'nb-folder-bar';
+		div.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99998;padding:6px 14px;'
+		                  + 'background:#1489db;color:#fff;font:13px/19px sans-serif;text-align:center';
+
+		var text = document.createElement('span');
+		text.textContent = 'Sync is off until you allow writing to "' + (folder || 'the shared folder') + '". ';
+
+		var allow = document.createElement('a');
+		allow.href = '#';
+		allow.textContent = 'Allow folder access';
+		allow.style.cssText = 'color:#fff;font-weight:500;text-decoration:underline';
+		allow.onclick = function(ev){ ev.preventDefault(); NB.sync.allowFolder(); return false; };
+
+		var close = document.createElement('a');
+		close.href = '#';
+		close.textContent = '\u00d7';
+		close.style.cssText = 'color:#fff;opacity:.7;margin-left:12px';
+		close.onclick = function(ev){ ev.preventDefault(); hideFolderBar(); return false; };
+
+		div.appendChild(text);
+		div.appendChild(allow);
+		div.appendChild(close);
+		document.body.appendChild(div);
+	}
+
+	function hideFolderBar()
+	{
+		var el = document.getElementById('nb-folder-bar');
+
+		if (el)
+			el.remove();
+	}
 </script>
 
 <script type="text/javascript">
@@ -3193,6 +3237,7 @@
 			this._store     = undefined;        // undefined = not resolved yet, null = none
 			this.storeError = '';
 			this.dir        = null;             // the chosen FileSystemDirectoryHandle
+			this.pending    = null;             // handle we have but may not write to yet
 			this.dirty      = new Set();
 			this.status     = 'off';
 			this.detail     = '';
@@ -3246,15 +3291,29 @@
 
 				if (state != 'granted')
 				{
-					this.storeError = state == 'denied'
-						? 'folder access was denied - choose it again'
-						: 'folder needs permission - press "Choose shared folder"';
+					if (state == 'prompt')
+					{
+						// the grant does not survive a page load - one click re-arms it on the
+						// same folder, no need to pick it again
+						this.pending    = dir;
+						this.storeError = 'folder access needs one click';
+
+						showFolderBar(dir.name);
+					}
+					else
+					{
+						this.storeError = 'folder access was denied - choose shared folder again';
+					}
 
 					return null;
 				}
 			}
 
-			this.dir = dir;
+			this.dir     = dir;
+			this.pending = null;
+
+			hideFolderBar();
+
 			return new StoreFolder(dir);
 		}
 
@@ -3288,18 +3347,51 @@
 			this.conf.folder = dir.name;
 			NB.storage.saveConfig();
 
-			this.dir = dir;
+			this.dir     = dir;
+			this.pending = null;
+
+			hideFolderBar();
 			syncConfUiLoad();
 			this.start();
+		}
+
+		allowFolder()		// called from a click - requestPermission needs the gesture
+		{
+			var dir = this.pending || this.dir;
+
+			if (! dir || typeof dir.requestPermission != 'function')
+				return this.chooseFolder();
+
+			var self = this;
+
+			return dir.requestPermission({ mode: 'readwrite' }).then(function(state){
+
+				if (state != 'granted')
+					return self.setStatus('error', 'folder access was not granted');
+
+				self.dir        = dir;
+				self.pending    = null;
+				self.storeError = '';
+				self._store     = undefined;
+
+				hideFolderBar();
+				return self.start();
+			},
+			function(x){
+				self.setStatus('error', 'folder access failed - ' + ((x && x.message) || x));
+			});
 		}
 
 		async forgetFolder()
 		{
 			this.stop();
 
-			this.dir    = null;
-			this._store = undefined;
+			this.dir     = null;
+			this.pending = null;
+			this._store  = undefined;
 			this.conf.folder = '';
+
+			hideFolderBar();
 
 			NB.storage.saveConfig();
 			await idbDel('folder');
@@ -3324,7 +3416,8 @@
 
 				if (! store)
 				{
-					if (this.storeError) this.setStatus('error', this.storeError);
+					if (this.storeError)
+						this.setStatus(/one click/.test(this.storeError) ? 'pending' : 'error', this.storeError);
 					else                 this.setStatus('off', 'not configured');
 
 					return;
@@ -3737,11 +3830,12 @@
 			if (! $s.length)
 				return;
 
-			var bad = this.status == 'error' || this.status == 'conflict';
+			var bad  = this.status == 'error' || this.status == 'conflict';
+			var warn = bad || this.status == 'pending';
 
 			$s.find('.status').toggleClass('error', bad).css({ display: 'block' });
 			$s.find('.status input').val(this.status == 'off' ? 'off' : (this.detail || this.status));
-			$s.find('.title u').text(bad ? '!' : (this.dirty.size ? '\u2022' : ''));
+			$s.find('.title u').text(warn ? '!' : (this.dirty.size ? '\u2022' : ''));
 			$s.find('.sync-resolve').css('display', this.conflicts.length ? 'block' : 'none');
 		}
 	}
@@ -6276,7 +6370,7 @@
 	var NB =
 	{
 		codeVersion: 20231105,
-		version: '0.5.1',                  // this fork, shown next to the logo
+		version: '0.5.2',                  // this fork, shown next to the logo
 		blobVersion: 20190412, // board blob format in Storage
 		board: null,
 		storage: null,

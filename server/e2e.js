@@ -624,16 +624,37 @@ async function main()
 			try { await dir.getFileHandle('board-7777777.json'); return false; } catch (e) { return true; }
 		})()`), 'deleting a board removes its file from the folder');
 
-		// a folder we no longer have permission for must say so, not fail silently
+		// the grant does not survive a page load: one click must re-arm it on the same folder
 		await cdp.eval(`(async function(){
 			NB.sync.stop();
 			NB.sync._store = undefined;
-			NB.sync.dir = { name: 'share', values: function(){ }, queryPermission: async function(){ return 'prompt'; } };
+
+			var root = await navigator.storage.getDirectory();
+			var dir  = await root.getDirectoryHandle('share');
+			var granted = false;
+
+			dir.queryPermission   = async function(){ return granted ? 'granted' : 'prompt'; };
+			dir.requestPermission = async function(){ granted = true; return 'granted'; };
+
+			NB.sync.dir = dir;
 			await NB.sync.start();
 		})()`);
 
-		check(/permission/i.test(await cdp.eval('NB.sync.detail')), 'a folder needing permission says so',
+		check(await cdp.eval('NB.sync.status') == 'pending', 'a fresh page load asks for one click, not for the folder again',
 			await cdp.eval('NB.sync.status + " / " + NB.sync.detail'));
+		check(await cdp.eval('!!document.getElementById("nb-folder-bar")'), 'and puts an allow bar on the page');
+
+		await cdp.eval('NB.sync.allowFolder()');
+		await sleep(1500);
+
+		const allowState = await cdp.eval(
+			'NB.sync.status + " / " + NB.sync.detail + " / pending=" + !!NB.sync.pending'
+			+ ' + " / conflicts=" + NB.sync.conflicts.length + " / dirty=" + NB.sync.dirty.size');
+
+		check(/^ok /.test(allowState), 'one click turns sync back on', allowState);
+		check(await cdp.eval('!document.getElementById("nb-folder-bar")'), 'and drops the bar');
+		check(await cdp.eval('NB.sync._store && NB.sync._store.type') == 'folder',
+			'against the same folder, without picking it again');
 
 		// configured folder, but this browser has no handle for it (fresh profile, or a
 		// browser that refuses to keep the permission)

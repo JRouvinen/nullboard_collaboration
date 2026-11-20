@@ -124,9 +124,16 @@ everybody's boards show up in your board list, with who saved them last and a **
 for boards nobody has touched in a week. Delete a board and its file is removed.
 
 Do not edit, rename or move those files by hand - the app is the only thing that should
-write them. If the browser needs permission again (after a restart, or in a fresh profile),
-the status line says so: click **Choose shared folder...** once and it picks up where it
-was. **Forget folder** stops using it.
+write them.
+
+**Expect one click when you open the app.** Browsers deliberately forget the folder grant
+when a page is loaded again, so on every fresh load a blue bar appears at the top:
+
+> Sync is off until you allow writing to "team boards". **Allow folder access**
+
+One click on that (then *Allow* in the browser's own prompt) is enough - it re-uses the same
+folder, you never have to pick it again. Until you do, sync stays off and the status line
+says `folder access needs one click`. **Forget folder** stops using the folder entirely.
 
 **This needs Chrome or Edge** - it uses the File System Access API, which Firefox does not
 have. Firefox users should use a sync server instead, or Export/Import.
