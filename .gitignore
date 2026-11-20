@@ -1,0 +1,9 @@
+# sync server data - boards live here, never in git
+server/data/
+*.tmp
+
+# pi session dumps
+pi-session-*.html
+
+# boards written by folder sync while testing
+own_kanban/

@@ -738,6 +738,12 @@
 		width: 11px;
 	}
 
+	.logo .ver {
+		margin-left: 5px;
+		opacity: 0.5;
+		font-size: calc(10rem / 11);
+	}
+
 	/***/
 	.logo.updated {
 		opacity: 1;
@@ -830,6 +836,12 @@
 		color: #000;
 	}
 
+	.config .bulk .boards a.load-board .stale {
+		margin-left: 6px;
+		opacity: 0.45;
+		font-size: calc(10rem / 11);
+	}
+
 	.config .bulk .boards a.load-board.dragging {
 		background: #DDE1E5;
 		border-radius: 2px;
@@ -870,6 +882,63 @@
 		padding: 6px 2px 0;
 		margin: 6px -2px 0;
 		border-top: 1px solid #00000028;
+	}
+
+	.config .bulk .sync-conf input {
+		width: 170px;
+		font-family: inherit;
+		font-size: inherit;
+		color: inherit;
+		background: transparent;
+		border: 1px solid #00000038;
+		border-radius: 2px;
+		padding: 0 3px;
+		margin: 1px 0;
+	}
+
+	.theme-dark .config .bulk .sync-conf input {
+		border-color: #ffffff40;
+	}
+
+	.config .bulk .sync-conf .status {
+		display: none;
+		margin-top: 3px;
+	}
+
+	.config .bulk .sync-conf .status input {
+		border: none;
+		width: auto;
+		max-width: 140px;
+		padding: 0;
+		opacity: 0.7;
+	}
+
+	.config .bulk .sync-conf .status.error input {
+		color: #d20;
+		opacity: 1;
+	}
+
+	.config .bulk .sync-conf .sync-resolve {
+		display: none;
+		color: #d20;
+	}
+
+	.config .bulk .sync-conf .folder-name {
+		display: block;
+		margin: 2px 0 4px;
+		opacity: 0.6;
+		word-break: break-all;
+	}
+
+	.config .bulk .sync-conf .or {
+		display: block;
+		margin: 8px 0 2px;
+		opacity: 0.45;
+		font-size: calc(10rem / 11);
+	}
+
+	.config .bulk .sync-conf .sync-forget {
+		display: none;
 	}
 
 	/***/
@@ -1228,6 +1297,25 @@
 		border-left: 1px solid #888;
 	}
 
+	.overlay .conflict .who {
+		text-align: center;
+		margin: 0 -10px 22px;
+		padding: 0 10px;
+		opacity: 0.7;
+	}
+
+	.overlay .conflict .pick a {
+		display: block;
+		margin-top: 12px;
+		color: #1489db;
+		font-weight: 500;
+	}
+
+	.overlay .conflict .pick span {
+		display: block;
+		opacity: 0.55;
+	}
+
 	.overlay .backup-conf .off .etc {
 		display: none;
 	}
@@ -1548,6 +1636,7 @@
 <body>
 	<div class="logo">
 		<a class=site href=https://nullboard.io>Nullboard</a>
+		<span class=ver></span>
 		<i class=alert></i>
 		<div class=bulk>
 			<a href=# class=view-about>About</a>
@@ -1572,6 +1661,22 @@
 				<input class=imp-board-select type="file" accept=".nbx">
 
 			<a href=# class=auto-backup>Auto-backup...</a>
+
+			<div class="section sync-conf break">
+				<a href=# class=title>Sync<u></u></a>
+				<div class=details>
+					<span>Name</span> <input class=who placeholder="optional"><br>
+					<span class=folder-name>no folder chosen</span>
+					<a href=# class=sync-pick>Choose shared folder...</a>
+					<a href=# class=sync-forget>Forget folder</a>
+					<span class=or>or a sync server</span>
+					<span>Server</span> <input class=base placeholder="http://host:10001"><br>
+					<span>Token</span>  <input class=auth placeholder="required"><br>
+					<a href=# class=sync-now>Sync now</a>
+					<a href=# class=sync-resolve>Resolve conflict...</a>
+					<p class=status><span>Status</span> <input disabled></p>
+				</div>
+			</div>
 
 			<div class="section ui-prefs break">
 				<a href=# class=title>UI preferences<u>...</u></a>
@@ -1697,6 +1802,28 @@
 
 			<div class=save><a href=# class=check>Check...</a> <a href=# class=ok>Save</a></div>
 		</div>
+
+		<div class="backup-conf conflict">
+			<a href=# class=close>&times;</a>
+
+			<h3>Changed elsewhere</h3>
+			<div class=what>"<b class=board-name></b>" is newer on the server than here.</div>
+			<div class=who></div>
+
+			<div class=pick>
+				<a href=# data-what=theirs>Take theirs</a>
+				<span>discard my changes - they stay in this board's undo history</span>
+
+				<a href=# data-what=mine>Keep mine</a>
+				<span>overwrite the server copy</span>
+
+				<a href=# data-what=branch>Keep both</a>
+				<span>save mine as a separate board, then take theirs</span>
+
+				<a href=# data-what=export>Export mine first...</a>
+				<span>download a .nbx file, then decide</span>
+			</div>
+		</div>
 	</tt>
 
 </body>
@@ -1747,6 +1874,8 @@
 		};
 
 		this.backupStatus = { };            // agentId => [ 'conf' ]
+
+		this.sync         = new SyncConf(); // see Sync
 	}
 
 	const default_backup_agents =
@@ -1764,6 +1893,9 @@
 		this.ui_spot = 0;                   // 0 = not set
 		this.history = [ ];                 // revision IDs
 		this.backupStatus = { };            // agentId => [ what's backed up ]
+		this.serverRev = 0;                 // revision on the sync server, 0 = never pushed
+		this.serverWho = '';                // who last saved it on the server
+		this.serverUpdated = 0;             // when, ms
 	}
 
 	class Storage
@@ -2094,6 +2226,9 @@
 		{
 			var conf = this.conf;
 			var simp = (new SimpleBackup).type;
+
+			if (conf && ! conf.sync)
+				conf.sync = new SyncConf();
 
 			if (conf.board && ! this.boardIndex.has(conf.board))
 				conf.board = null;
@@ -2645,7 +2780,7 @@
 	function Board(title)
 	{
 		this.format   = NB.blobVersion;
-		this.id       = +new Date();
+		this.id       = nextBoardId();
 		this.revision = 0;
 		this.title    = title || '';
 		this.lists    = [ ];
@@ -2656,6 +2791,937 @@
 			this.lists.push(x);
 			return x;
 		}
+	}
+
+	/*
+	 *	sync - the server holds the shared copy, localStorage stays the local one.
+	 *	Local revisions keep driving undo; meta.serverRev is sync bookkeeping only and
+	 *	is what gets sent as If-Match. See Backlog.md phase 2.
+	 */
+
+	var _last_board_id = 0;
+
+	function nextBoardId()
+	{
+		var id = +new Date();
+
+		// monotonic within this browser - two boards made in the same ms would collide
+		if (id <= _last_board_id)
+			id = _last_board_id + 1;
+
+		_last_board_id = id;
+		return id;
+	}
+
+	function SyncConf()
+	{
+		this.base  = '';                    // http://host:10001
+		this.auth  = '';                    // access token
+		this.who   = '';                    // display name, sent as lastEditor
+		this.every = 60000;                 // poll interval, ms
+		this.folder = '';                   // name of the shared folder, the handle lives in IndexedDB
+		this.deleted = [ ];                 // board ids deleted here, waiting for the other side to agree
+	}
+
+	const SYNC_DEBOUNCE = 400;
+
+	function isBusyEditing()
+	{
+		return $('.wrap .editing').length > 0 || $('body').hasClass('dragging');
+	}
+
+	function timeNow()
+	{
+		return new Date().toLocaleTimeString();
+	}
+
+	function relTime(ms)
+	{
+		var d = Math.round((Date.now() - ms) / 1000);
+
+		if (d < 45)    return 'just now';
+		if (d < 3600)  return Math.round(d / 60) + ' min ago';
+		if (d < 172800) return Math.round(d / 3600) + ' h ago';
+		return Math.round(d / 86400) + ' days ago';
+	}
+
+	function downloadBoard(board)
+	{
+		var blob = 'data:application/octet-stream,' + encodeURIComponent(JSON.stringify(board));
+		var file = `Nullboard-${board.id}-${board.title || ''}.nbx`;
+
+		$('<a>').attr({ href: blob, download: file })[0].click();
+	}
+
+	/*
+	 *	where the shared copy lives. Two stores answer in the same normalized shape so
+	 *	Sync does not care which one it is talking to:
+	 *
+	 *	  { kind: 'ok' | 'unchanged' | 'conflict' | 'gone' | 'missing' | 'error',
+	 *	    revision, updated, lastEditor, data, boards, text }
+	 *
+	 *	'gone' means it was deleted on the other side, 'missing' means it was never there.
+	 */
+
+	class Store
+	{
+		constructor() { this.type = '?'; }
+
+		async get(id, baseRev)      { throw 'implement-me'; }
+		async put(id, doc, baseRev) { throw 'implement-me'; }
+		async list()                { throw 'implement-me'; }
+		async del(id)               { throw 'implement-me'; }
+	}
+
+	/*
+	 *	nullboard-sync server (server/server.js)
+	 */
+	class StoreHttp extends Store
+	{
+		constructor(base, auth)
+		{
+			super();
+
+			this.type = 'http';
+			this.base = base.replace(/\/+$/, '');
+			this.auth = auth;
+		}
+
+		async call(method, path, body, ifMatch)
+		{
+			var headers = { 'X-Access-Token': this.auth };
+			var ops     = { method: method, headers: headers };
+
+			if (body !== undefined) headers['Content-Type'] = 'application/json';
+			if (ifMatch)            headers['If-Match'] = String(ifMatch);
+			if (body !== undefined) ops.body = JSON.stringify(body);
+
+			try
+			{
+				var res  = await fetch(this.base + path, ops);
+				var text = await res.text();
+				var data = null;
+
+				try { data = text ? JSON.parse(text) : null; } catch (x) { }
+
+				return { status: res.status, body: data };
+			}
+			catch (x)
+			{
+				return { status: 0, body: null };	// offline or CORS-blocked
+			}
+		}
+
+		text(res)
+		{
+			if (res.status == 401) return 'bad token';
+			return res.status ? 'server said ' + res.status : 'offline';
+		}
+
+		async get(id, baseRev)
+		{
+			var res = await this.call('GET', '/board/' + id + '?rev=' + (baseRev || 0));
+
+			if (res.status == 304) return { kind: 'unchanged' };
+			if (res.status == 404) return { kind: 'missing' };
+			if (res.status == 410) return { kind: 'gone' };
+			if (res.status != 200 || ! res.body || ! res.body.data) return { kind: 'error', text: this.text(res) };
+
+			return { kind: 'ok', revision: res.body.revision, updated: res.body.updated,
+			         lastEditor: res.body.lastEditor, data: res.body.data };
+		}
+
+		async put(id, doc, baseRev)
+		{
+			var res = await this.call('PUT', '/board/' + id, doc, baseRev);
+
+			if (res.status == 200) return { kind: 'ok', revision: res.body.revision, updated: res.body.updated,
+			                                lastEditor: doc.lastEditor };
+
+			if (res.status == 409) return { kind: 'conflict', revision: res.body.revision, updated: res.body.updated,
+			                                lastEditor: res.body.lastEditor };
+
+			if (res.status == 410) return { kind: 'gone' };
+
+			return { kind: 'error', text: this.text(res) };
+		}
+
+		async list()
+		{
+			var res = await this.call('GET', '/boards');
+
+			if (res.status != 200 || ! Array.isArray(res.body)) return { kind: 'error', text: this.text(res) };
+
+			return { kind: 'ok', boards: res.body };
+		}
+
+		async del(id)
+		{
+			var res = await this.call('DELETE', '/board/' + id);
+
+			if (res.status == 200 || res.status == 404 || res.status == 410) return { kind: 'gone' };
+
+			return { kind: 'error', text: this.text(res) };
+		}
+	}
+
+	/*
+	 *	a folder on a shared drive, via the File System Access API. One file per board, so
+	 *	each board has exactly one writer. See Backlog.md phase 6.
+	 */
+	const FOLDER_FILE_RE = /^board-(.+)\.json$/;
+
+	class StoreFolder extends Store
+	{
+		constructor(dir)
+		{
+			super();
+
+			this.type = 'folder';
+			this.dir  = dir;
+		}
+
+		name(id) { return 'board-' + id + '.json'; }
+
+		// undefined = no such file, null = there but not readable (never trust a bad parse)
+		async readFile(name)
+		{
+			try
+			{
+				var fh = await this.dir.getFileHandle(name);
+
+				if (! fh || typeof fh.getFile != 'function') return undefined;
+
+				return JSON.parse(await (await fh.getFile()).text());
+			}
+			catch (x)
+			{
+				if (x && (x.name == 'NotFoundError' || x.name == 'TypeMismatchError')) return undefined;
+				return null;
+			}
+		}
+
+		async get(id, baseRev)
+		{
+			var doc = await this.readFile(this.name(id));
+
+			if (doc === undefined) return { kind: 'missing' };
+			if (! doc || typeof doc != 'object') return { kind: 'error', text: 'unreadable file' };
+
+			if (baseRev && doc.revision == baseRev) return { kind: 'unchanged' };
+
+			return { kind: 'ok', revision: doc.revision || 0, updated: doc.updated || 0,
+			         lastEditor: doc.lastEditor || '', data: doc.data };
+		}
+
+		async put(id, doc, baseRev)
+		{
+			var have = await this.readFile(this.name(id));
+
+			if (have === null)
+				return { kind: 'error', text: 'unreadable file, not overwriting' };
+
+			if (have !== undefined)
+			{
+				if ((have.revision || 0) != (baseRev || 0))
+					return { kind: 'conflict', revision: have.revision || 0, updated: have.updated || 0,
+					         lastEditor: have.lastEditor || '' };
+			}
+			else
+			if (baseRev)
+				return { kind: 'gone' };		// we thought we had it, somebody removed it
+
+			var revision = (have ? (have.revision || 0) : 0) + 1;
+			var now      = Date.now();
+			var out      = { id: String(id), revision: revision, updated: now,
+			                 lastEditor: doc.lastEditor || '', data: doc.data };
+
+			try
+			{
+				var fh = await this.dir.getFileHandle(this.name(id), { create: true });
+				var w  = await fh.createWritable();
+
+				await w.write(JSON.stringify(out));
+				await w.close();		// chromium writes a temp file and swaps it here
+			}
+			catch (x)
+			{
+				return { kind: 'error', text: 'write failed (' + ((x && x.name) || x) + ')' };
+			}
+
+			return { kind: 'ok', revision: revision, updated: now, lastEditor: out.lastEditor };
+		}
+
+		async list()
+		{
+			var boards = [];
+
+			try
+			{
+				for await (var entry of this.dir.values())
+				{
+					if (entry.kind != 'file' || ! FOLDER_FILE_RE.test(entry.name))
+						continue;
+
+					var doc = await this.readFile(entry.name);
+
+					if (! doc || doc.deleted)
+						continue;
+
+					boards.push({
+						id         : doc.id || entry.name.match(FOLDER_FILE_RE)[1],
+						revision   : doc.revision || 0,
+						updated    : doc.updated || 0,
+						lastEditor : doc.lastEditor || '',
+					});
+				}
+			}
+			catch (x)
+			{
+				return { kind: 'error', text: 'cannot read the folder' };
+			}
+
+			return { kind: 'ok', boards: boards };
+		}
+
+		async del(id)
+		{
+			try
+			{
+				await this.dir.removeEntry(this.name(id));
+			}
+			catch (x)
+			{
+				if (! x || x.name != 'NotFoundError')
+					return { kind: 'error', text: 'delete failed' };
+			}
+
+			return { kind: 'gone' };
+		}
+	}
+
+	/*
+	 *	a folder handle cannot go into the config JSON, so it lives in IndexedDB
+	 */
+	function idb()
+	{
+		return new Promise(function(resolve, reject){
+			var req = indexedDB.open('nullboard-sync', 1);
+
+			req.onupgradeneeded = function(){
+				if (! req.result.objectStoreNames.contains('handles'))
+					req.result.createObjectStore('handles');
+			};
+
+			req.onsuccess = function(){ resolve(req.result); };
+			req.onerror   = function(){ reject(req.error); };
+		});
+	}
+
+	function idbOp(mode, fn)
+	{
+		return idb().then(function(db){
+			return new Promise(function(resolve, reject){
+				var tx  = db.transaction('handles', mode);
+				var req = fn(tx.objectStore('handles'));
+
+				req.onsuccess = function(){ resolve(req.result); };
+				req.onerror   = function(){ reject(req.error); };
+			});
+		});
+	}
+
+	async function idbGet(key) { try { return await idbOp('readonly',  st => st.get(key)); }    catch (x) { return undefined; } }
+	async function idbPut(key, v) { try { await idbOp('readwrite', st => st.put(v, key)); }     catch (x) { } }
+	async function idbDel(key) { try { await idbOp('readwrite', st => st.delete(key)); }        catch (x) { } }
+
+	class Sync
+	{
+		constructor()
+		{
+			this.timer      = null;
+			this.pushing    = null;
+			this.polling    = false;
+			this.starting   = false;
+			this._store     = undefined;        // undefined = not resolved yet, null = none
+			this.storeError = '';
+			this.dir        = null;             // the chosen FileSystemDirectoryHandle
+			this.dirty      = new Set();
+			this.status     = 'off';
+			this.detail     = '';
+			this.conflicts  = [ ];              // boards waiting for the user to pick a side
+			this.conflicted = new Set();        // ids we must not push while unresolved
+		}
+
+		get conf()    { return NB.storage.getConfig().sync; }
+		get enabled() { var c = this.conf; return !! (c && (c.folder || (c.base && c.auth))); }
+
+		async store()
+		{
+			if (this._store !== undefined)
+				return this._store;
+
+			this.storeError = '';
+
+			var conf = this.conf;
+
+			if (conf.folder)
+			{
+				this._store = await this.openFolder();
+				return this._store;
+			}
+
+			if (conf.base && conf.auth)
+			{
+				this._store = new StoreHttp(conf.base, conf.auth);
+				return this._store;
+			}
+
+			this._store = null;
+			return null;
+		}
+
+		async openFolder()
+		{
+			var dir = this.dir || await idbGet('folder');
+
+			if (! dir || typeof dir.values != 'function')
+			{
+				this.storeError = 'folder "' + this.conf.folder + '" is not available here - choose it again';
+				return null;
+			}
+
+			if (typeof dir.queryPermission == 'function')
+			{
+				var state = 'prompt';
+
+				try { state = await dir.queryPermission({ mode: 'readwrite' }); } catch (x) { }
+
+				if (state != 'granted')
+				{
+					this.storeError = state == 'denied'
+						? 'folder access was denied - choose it again'
+						: 'folder needs permission - press "Choose shared folder"';
+
+					return null;
+				}
+			}
+
+			this.dir = dir;
+			return new StoreFolder(dir);
+		}
+
+		async chooseFolder()
+		{
+			if (typeof window.showDirectoryPicker != 'function')
+				return alert('This browser cannot open a folder.\nUse Chrome or Edge, or set a sync server instead.');
+
+			var dir;
+
+			try
+			{
+				dir = await window.showDirectoryPicker({ id: 'nullboard', mode: 'readwrite' });
+			}
+			catch (x)
+			{
+				return;		// the user cancelled
+			}
+
+			await idbPut('folder', dir);
+
+			this.conf.folder = dir.name;
+			NB.storage.saveConfig();
+
+			this.dir = dir;
+			syncConfUiLoad();
+			this.start();
+		}
+
+		async forgetFolder()
+		{
+			this.stop();
+
+			this.dir    = null;
+			this._store = undefined;
+			this.conf.folder = '';
+
+			NB.storage.saveConfig();
+			await idbDel('folder');
+
+			syncConfUiLoad();
+			this.start();
+		}
+
+		async start()
+		{
+			if (this.starting)
+				return;
+
+			this.starting = true;
+
+			this.stop();
+			this._store = undefined;
+
+			try
+			{
+				var store = await this.store();
+
+				if (! store)
+				{
+					if (this.storeError) this.setStatus('error', this.storeError);
+					else                 this.setStatus('off', 'not configured');
+
+					return;
+				}
+
+				var self  = this;
+				var every = Math.max(5000, this.conf.every || 60000);
+
+				this.timer = setInterval(function(){ self.poll(); }, every);
+
+				// boards that predate sync get pushed once
+				NB.storage.getBoardIndex().forEach(function(meta, id){
+					if (! meta.serverRev) self.touch(id);
+				});
+
+				await this.poll();
+			}
+			finally
+			{
+				this.starting = false;
+			}
+		}
+
+		stop()
+		{
+			if (this.timer) clearInterval(this.timer);
+			this.timer = null;
+		}
+
+		touch(id)		// a local change -> schedule a push
+		{
+			if (! this.enabled || ! id)
+				return;
+
+			this.dirty.add(id);
+			this.updateStatus();
+
+			var self = this;
+
+			if (this.pushing) clearTimeout(this.pushing);
+			this.pushing = setTimeout(function(){ self.pushing = null; self.flush(); }, SYNC_DEBOUNCE);
+		}
+
+		async flush()
+		{
+			var store = await this.store();
+
+			if (! store)
+				return;
+
+			var ids = Array.from(this.dirty);
+
+			for (var i=0; i<ids.length; i++)
+				await this.push(ids[i]);
+		}
+
+		async push(id)
+		{
+			if (this.conflicted.has(id))
+				return;
+
+			var store = await this.store();
+
+			if (! store)
+				return;
+
+			var meta = NB.storage.getBoardIndex().get(id);
+
+			if (! meta)
+				return this.dirty.delete(id);
+
+			var board = NB.storage.loadBoard(id, null);
+
+			if (! board)
+				return this.dirty.delete(id);
+
+			var base = meta.serverRev || 0;
+			var res  = await store.put(id, { data: board, lastEditor: this.conf.who || '' }, base);
+
+			if (res.kind == 'ok')
+			{
+				meta.serverRev     = res.revision;
+				meta.serverWho     = this.conf.who || '';
+				meta.serverUpdated = res.updated || 0;
+				this.saveMeta(id, meta);
+				this.dirty.delete(id);
+				return this.setStatus('ok', 'synced ' + timeNow());
+			}
+
+			if (res.kind == 'conflict')
+				return this.onConflict(id, meta, res);
+
+			if (res.kind == 'gone')
+			{
+				this.dirty.delete(id);
+				return this.setStatus('error', 'deleted elsewhere');
+			}
+
+			this.setStatus('error', res.text || 'sync error');
+		}
+
+		onConflict(id, meta, remote)
+		{
+			this.conflicted.add(id);
+			this.dirty.delete(id);
+
+			var queued = this.conflicts.filter(function(c){ return c.id == id; })[0];
+
+			if (queued)
+			{
+				queued.remote = remote;		// same board again - just keep the newest facts
+				return;
+			}
+
+			this.conflicts.push({ id: id, remote: remote || { } });
+			this.setStatus('conflict', 'needs your attention');
+
+			if (! haveOverlay())
+				this.showConflict();
+		}
+
+		showConflict()
+		{
+			var c = this.conflicts[0];
+
+			if (! c)
+				return;
+
+			var meta = NB.storage.getBoardIndex().get(c.id);
+			var $div = $('tt .conflict').clone();
+
+			var who = c.remote.lastEditor || 'someone else';
+			var when = c.remote.updated ? relTime(c.remote.updated) : 'recently';
+
+			$div.find('.board-name').text(meta ? meta.title : ('board ' + c.id));
+			$div.find('.who').html( `Last saved by <b>${htmlEncode(who)}</b> ${htmlEncode(when)}.` );
+
+			$div.find('a.close').click(function(){ hideOverlay(); return false; });
+
+			$div.find('.pick a').click(function(){
+				NB.sync.resolve( $(this).attr('data-what') );
+				return false;
+			});
+
+			showOverlay($div);
+		}
+
+		async resolve(what)
+		{
+			var c = this.conflicts[0];
+
+			if (! c)
+				return;
+
+			var id    = c.id;
+			var meta  = NB.storage.getBoardIndex().get(id);
+			var board = meta ? NB.storage.loadBoard(id, null) : false;
+
+			if (what == 'export')
+			{
+				if (board)
+					downloadBoard(board);
+
+				return;			// still unresolved - the dialog stays up
+			}
+
+			hideOverlay();
+
+			this.conflicts.shift();
+			this.conflicted.delete(id);
+			this.dirty.delete(id);
+
+			if (what == 'theirs')
+			{
+				await this.pullBoard(id);
+			}
+			else
+			if (what == 'mine' && meta)
+			{
+				meta.serverRev = c.remote.revision || 0;
+				this.saveMeta(id, meta);
+				this.dirty.add(id);
+				await this.push(id);
+			}
+			else
+			if (what == 'branch' && board && meta)
+			{
+				var copy = Object.assign(new Board(), board);
+				copy.id = nextBoardId();
+				copy.title = (copy.title || 'board') + ' (mine)';
+
+				NB.storage.saveBoard(copy);		// a brand new local board...
+				this.touch(copy.id);			// ...pushed as a new one
+
+				await this.pullBoard(id);		// ...while this one takes theirs
+			}
+
+			updateBoardIndex();
+
+			if (this.conflicts.length)
+				this.showConflict();
+		}
+
+		async poll()
+		{
+			if (this.polling)
+				return;
+
+			this.polling = true;
+
+			try
+			{
+				var store = await this.store();
+
+				if (! store)
+					return;
+
+				// finish deletes that could not reach the other side last time
+				var tombs = this.tombstones().slice();
+
+				for (var i=0; i<tombs.length; i++)
+					await this.remove(tombs[i]);
+
+				await this.flush();		// retry whatever failed last time
+
+				var res = await store.list();
+
+				if (res.kind != 'ok')
+					return this.setStatus('error', res.text || 'cannot list boards');
+
+				var have = NB.storage.getBoardIndex();
+				var changed = false;
+
+				for (var r of res.boards)
+				{
+					var id = /^\d+$/.test(r.id) ? parseInt(r.id) : r.id;
+
+					if (this.isDeleted(id))
+						continue;
+
+					var meta = have.get(id);
+
+					if (! meta)
+					{
+						if (await this.pullBoard(id)) changed = true;
+						continue;
+					}
+
+					// keep the board list honest even for boards we do not pull
+					if (meta.serverWho != r.lastEditor || meta.serverUpdated != r.updated)
+					{
+						meta.serverWho     = r.lastEditor || '';
+						meta.serverUpdated = r.updated || 0;
+						this.saveMeta(id, meta);
+						changed = true;
+					}
+
+					if ((meta.serverRev || 0) == r.revision)
+						continue;
+
+					// both sides moved - leave the local version alone, the next push will 409
+					if (this.dirty.has(id))
+						continue;
+
+					if (await this.pullBoard(id)) changed = true;
+				}
+
+				if (changed)
+				{
+					updateBoardIndex();
+					this.setStatus('ok', 'pulled ' + timeNow());
+				}
+				else
+					this.setStatus('ok', 'synced ' + timeNow());
+			}
+			finally
+			{
+				this.polling = false;
+
+				// a conflict the user dismissed comes back a minute later
+				if (this.conflicts.length && ! haveOverlay())
+					this.showConflict();
+			}
+		}
+
+		async pullBoard(id)
+		{
+			if (this.isDeleted(id))
+				return false;
+
+			var store = await this.store();
+
+			if (! store)
+				return false;
+
+			var meta = NB.storage.getBoardIndex().get(id);
+			var res  = await store.get(id, meta ? (meta.serverRev || 0) : 0);
+
+			if (res.kind == 'gone')
+			{
+				this.dirty.delete(id);
+				this.setStatus('error', 'a board was deleted elsewhere');
+				return false;
+			}
+
+			if (res.kind != 'ok' || ! res.data)
+				return false;
+
+			var board = Object.assign(new Board(), res.data);
+			board.id = id;
+
+			// data.revision is the *sender's* local counter. Storage.saveBoard treats
+			// rev_old < rev < rev_new as revisions skipped by undo and deletes them, so it
+			// must be our own current revision here, not theirs.
+			board.revision = meta ? meta.current : 0;
+
+			NB.storage.saveBoard(board);		// a fresh local revision, so undo can step back over it
+
+			meta = NB.storage.getBoardIndex().get(id);
+
+			if (meta)
+			{
+				meta.serverRev     = res.revision;
+				meta.serverWho     = res.lastEditor || '';
+				meta.serverUpdated = res.updated || 0;
+				this.saveMeta(id, meta);
+			}
+
+			this.dirty.delete(id);
+
+			if (NB.board && NB.board.id == id && ! isBusyEditing())
+				openBoard(id);
+
+			return true;
+		}
+
+		async remove(id)
+		{
+			this.dirty.delete(id);
+			this.updateStatus();
+
+			// the tombstone is written first: a delete that cannot reach the other side must
+			// still stop the next poll from pulling the board back
+			var tombs = this.tombstones();
+			var key   = String(id);
+
+			if (tombs.indexOf(key) == -1)
+			{
+				tombs.push(key);
+				NB.storage.saveConfig();
+			}
+
+			var store = await this.store();
+
+			if (! store)
+				return;
+
+			var res = await store.del(id);
+
+			if (res.kind == 'gone')
+			{
+				var i = tombs.indexOf(key);
+
+				if (i != -1)
+				{
+					tombs.splice(i, 1);
+					NB.storage.saveConfig();
+				}
+
+				return;
+			}
+
+			this.setStatus('error', 'delete failed, will retry');
+		}
+
+		tombstones()
+		{
+			var conf = this.conf;
+
+			if (! conf)
+				return [ ];
+
+			if (! Array.isArray(conf.deleted))
+				conf.deleted = [ ];
+
+			return conf.deleted;
+		}
+
+		isDeleted(id)
+		{
+			return this.tombstones().indexOf(String(id)) != -1;
+		}
+
+		saveMeta(id, meta)
+		{
+			NB.storage.setJson('board.' + id + '.meta', meta);
+		}
+
+		setStatus(kind, detail)
+		{
+			this.status = kind;
+			this.detail = detail || '';
+			this.updateStatus();
+		}
+
+		updateStatus()
+		{
+			var $s = $('.config .sync-conf');
+
+			if (! $s.length)
+				return;
+
+			var bad = this.status == 'error' || this.status == 'conflict';
+
+			$s.find('.status').toggleClass('error', bad).css({ display: 'block' });
+			$s.find('.status input').val(this.status == 'off' ? 'off' : (this.detail || this.status));
+			$s.find('.title u').text(bad ? '!' : (this.dirty.size ? '\u2022' : ''));
+			$s.find('.sync-resolve').css('display', this.conflicts.length ? 'block' : 'none');
+		}
+	}
+
+	function syncConfUiLoad()
+	{
+		var conf = NB.storage.getConfig().sync;
+		var $s   = $('.config .sync-conf');
+
+		$s.find('.base').val(conf.base || '');
+		$s.find('.auth').val(conf.auth || '');
+		$s.find('.who') .val(conf.who  || '');
+
+		$s.find('.folder-name').text(conf.folder || 'no folder chosen');
+		$s.find('.sync-forget').css('display', conf.folder ? 'block' : 'none');
+
+		if (typeof window.showDirectoryPicker != 'function')
+		{
+			$s.find('.sync-pick').css('display', 'none');
+			$s.find('.folder-name').text('this browser has no folder access - use Chrome or Edge');
+		}
+
+		NB.sync.updateStatus();
+	}
+
+	function syncConfUiSave()
+	{
+		var conf = NB.storage.getConfig().sync;
+		var $s   = $('.config .sync-conf');
+
+		conf.base = $s.find('.base').val().trim();
+		conf.auth = $s.find('.auth').val().trim();
+		conf.who  = $s.find('.who') .val().trim();
+
+		NB.storage.saveConfig();
+		NB.sync.start();
 	}
 
 </script>
@@ -3276,8 +4342,13 @@
 		NB.storage.saveBoard(board);
 		NB.board = board;
 
+		if (NB.sync)
+			NB.sync.touch(board.id);
+
 		updateUndoRedo();
 		updateBoardIndex();
+
+		adjustListScroller();		// adding or removing a list changes the scroll width
 	}
 
 	function deleteBoard()
@@ -3291,6 +4362,9 @@
 		closeBoard();
 
 		NB.storage.nukeBoard(board_id);
+
+		if (NB.sync)
+			NB.sync.remove(board_id);
 
 		updateBoardIndex();
 	}
@@ -3585,6 +4659,9 @@
 				alert(`Failed to save board ${board.id}. Import failed.`);
 				return false;
 			}
+
+			if (NB.sync) // otherwise an imported board sits local-only until someone edits it
+				NB.sync.touch(board.id);
 
 			if (! to_open) to_open = data[0].id;
 		}
@@ -3945,6 +5022,21 @@
 		document.title = title;
 	}
 
+	function syncStamp(meta)
+	{
+		if (! meta.serverUpdated)
+			return '';
+
+		return `${meta.serverWho || 'someone'}, synced ${relTime(meta.serverUpdated)}`;
+	}
+
+	const STALE_MS = 7 * 24 * 3600 * 1000;
+
+	function isStale(meta)
+	{
+		return meta.serverUpdated > 0 && (Date.now() - meta.serverUpdated) > STALE_MS;
+	}
+
 	function updateUndoRedo()
 	{
 		var $undo = $('.board .menu .undo-board');
@@ -3991,7 +5083,13 @@
 
 			var $e = $entry.clone();
 			$e.attr('board_id', entry.id);
-			$e.html(entry.meta.title);
+			$e.attr('title', syncStamp(entry.meta));
+
+			// .text(), not .html(): titles now arrive from the server, i.e. from other people
+			$e.empty().append( $('<span class=name>').text(entry.meta.title) );
+
+			if (isStale(entry.meta))
+				$e.append( $('<span class=stale>').text('stale') );
 
 			if (entry.id == id_now)
 				$e.addClass('active');
@@ -4293,6 +5391,8 @@
 			$board.css('max-width', max + 'px');
 			$body.addClass('crowded');
 		}
+
+		adjustListScroller();	// replaces the old 100ms poll
 	}
 
 	//
@@ -4965,6 +6065,31 @@
 		configBackups();
 	});
 
+	$('.config .sync-conf input').on('change', function(){
+		syncConfUiSave();
+	});
+
+	$('.config .sync-conf .sync-now').on('click', function(){
+		if (! NB.sync.enabled) { shakeControl($('.config .sync-conf .base')); return false; }
+		NB.sync.poll();
+		return false;
+	});
+
+	$('.config .sync-conf .sync-resolve').on('click', function(){
+		NB.sync.showConflict();
+		return false;
+	});
+
+	$('.config .sync-conf .sync-pick').on('click', function(){
+		NB.sync.chooseFolder();
+		return false;
+	});
+
+	$('.config .sync-conf .sync-forget').on('click', function(){
+		NB.sync.forgetFolder();
+		return false;
+	});
+
 	//
 	$('.config .section .title').on('click', function(){
 		$(this).closest('.section').toggleClass('open');
@@ -5063,7 +6188,7 @@
 
 	$('.view-about').click(function(){
 		var $div = $('tt .about').clone();
-		$div.find('div').html(`Version ${NB.codeVersion}`);
+		$div.find('div').html(`Version ${NB.version} (code ${NB.codeVersion})`);
 		showOverlay($div);
 		return false;
 	});
@@ -5095,6 +6220,7 @@
 	var NB =
 	{
 		codeVersion: 20231105,
+		version: '0.5.0',                  // this fork, shown next to the logo
 		blobVersion: 20190412, // board blob format in Storage
 		board: null,
 		storage: null,
@@ -5109,8 +6235,26 @@
 			var conf = this.storage.getConfig();
 			conf[name] = val;
 			return this.storage.saveConfig();
+		},
+
+		/*
+		 *	NB.debug(true) in the console turns the storage/sync logging back on
+		 */
+		debug: function(on)
+		{
+			this.poke('debug', !! on);
+			console.log = on ? _console_log : function(){ };
 		}
 	};
+
+	/*
+	 *	storage and sync are chatty, a team does not need a running commentary.
+	 *	Read raw, because Storage.open() logs before the config is available.
+	 */
+	const _console_log = console.log.bind(console);
+
+	try   { if (! JSON.parse(localStorage.getItem('nullboard.config')).debug) console.log = function(){ }; }
+	catch (x) { console.log = function(){ }; }
 
 	NB.storage = new Storage_Local();
 
@@ -5164,6 +6308,8 @@
 
 	updateBoardIndex();
 
+	$('.logo .ver').text('v' + NB.version).attr('title', `Nullboard ${NB.version} - code ${NB.codeVersion}`);
+
 	setWhatsNew();
 
 	NB.storage.setVerLast();
@@ -5175,9 +6321,14 @@
 	if (NB.board)
 		showBoard(true);
 
-	//
-	setInterval(adjustListScroller, 100);
+	/*
+	 *	sync
+	 */
+	NB.sync = new Sync();
+	syncConfUiLoad();
+	NB.sync.start();
 
+	//
 	setupListScrolling();
 
 </script>

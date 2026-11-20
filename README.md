@@ -84,6 +84,73 @@ Also:
 * Undo/redo for 50 revisions per board (configurable in the code)
 * Keyboard shortcuts, including Tab'ing through notes
 
+## Sync (this fork)
+
+This fork adds an optional shared copy, so a team can see each other's boards. It stays an
+offline-first app: localStorage is still the source of truth on your machine, and the shared
+copy is something everyone reconciles with. There are two ways to share, and you only need
+one of them.
+
+* Edits are saved locally first, then written to the shared copy immediately.
+* Other people's changes are picked up every 60 seconds.
+* Nothing blocks on the network - you can edit with the share unreachable and it catches up.
+* If two people edit the same board, the second one gets a dialog instead of silently
+  overwriting: **take theirs**, **keep mine**, **keep both** (mine becomes a new board), or
+  **export mine** first.
+
+### Shared folder - no server to run
+
+Put `nullboard.html` and `extras/` on the shared drive, and everyone opens it from there.
+
+Open the config menu (the `≡` at the top right) → **Sync**, and fill in:
+
+| Field | Meaning |
+|---|---|
+| Name | how you appear as "last saved by ..." |
+| **Choose shared folder...** | pick the folder on the share, e.g. `Z:\team boards` |
+
+That is the whole setup. Each board becomes one file, `board-<id>.json`, in that folder:
+everybody's boards show up in your board list, with who saved them last and a **stale** badge
+for boards nobody has touched in a week. Delete a board and its file is removed.
+
+Do not edit, rename or move those files by hand - the app is the only thing that should
+write them. If the browser needs permission again (after a restart, or in a fresh profile),
+the status line says so: click **Choose shared folder...** once and it picks up where it
+was. **Forget folder** stops using it.
+
+**This needs Chrome or Edge** - it uses the File System Access API, which Firefox does not
+have. Firefox users should use a sync server instead, or Export/Import.
+
+### Sync server
+
+A small server is included for teams who cannot use a folder (Firefox), or who would rather
+have the shared copy on a machine than on the share. Zero dependencies, plain Node:
+
+```sh
+NB_TOKEN=<a shared secret> node server/server.js      # listens on 10001
+```
+
+`NB_DATA` sets where the JSON files live (default `server/data/`), `NB_PORT` the port. Then
+in the app's Sync section set **Server** (`http://host:10001`) and **Token** (the
+`NB_TOKEN` value). Anyone with the token can read, write and delete every board on it - it is
+for a trusted team behind the LAN, not for the open internet.
+
+Clear the folder (and the Server/Token fields) to turn sharing off again. Boards you import
+with **Import boards...** are pushed to the shared copy straight away.
+
+### Losing a board
+
+The shared copy keeps one file per board, not a revision history. If someone else's version
+wins over yours:
+
+* if the overwrite happened on *this* machine, your version is still in the local undo
+  history - `Ctrl-Z`, or the board menu's **Undo**;
+* otherwise, restore from the last `.nbx` you exported (**Export this board...**).
+
+That is why the conflict dialog offers **Export mine first** and **Keep both**.
+
+---
+
 ## Caveats
 
 * Written for desktop and keyboard/mouse use
