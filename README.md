@@ -89,8 +89,8 @@ Also:
 
 This fork adds an optional shared copy, so a team can see each other's boards. It stays an
 offline-first app: localStorage is still the source of truth on your machine, and the shared
-copy is something everyone reconciles with. There are two ways to share, and you only need
-one of them.
+copy is something everyone reconciles with. There are three ways to share, and you only need
+one of them: a shared folder, a sync server, or plain `.nbx` files dropped in a folder.
 
 * Edits are saved locally first, then written to the shared copy immediately.
 * Other people's changes are picked up every 60 seconds.
@@ -138,6 +138,31 @@ says `folder access needs one click`. **Forget folder** stops using the folder e
 **This needs Chrome or Edge** - it uses the File System Access API, which Firefox does not
 have. Firefox users should use a sync server instead, or Export/Import.
 
+### No folder access? Drop a file instead
+
+Some work machines refuse the folder picker outright - **Choose shared folder...** answers
+`NotAllowedError ... not allowed by the user agent or the platform in the current context`,
+and no amount of clicking fixes it, because a policy is saying no. For those machines the
+team can work off plain files in the same shared folder, no picking required:
+
+1. **Export all boards...** (config menu) writes one file, `nullboard-<your name>-<date>-<time>.nbx`.
+   If this browser has no name stored (a wiped profile) it asks for one first, because the
+   name is how the team tells whose drop it is.
+2. Save it into the team folder, e.g. `Z:\team boards\`. The name and the time in it mean
+   nobody's file ever overwrites anybody else's.
+3. **Import boards...** takes as many of those files as you like - select them all in the
+   file dialog - and merges them.
+
+Merging goes by **last edit time**, not by revision: a board you already have is replaced
+only by a copy edited *later* than yours, and an older copy is listed as `older` and left
+alone. So importing the whole folder every morning cannot roll anyone back, and importing
+your own export does nothing. Boards you do not have are added; a new board whose title you
+already use gets ` (imported)` so the two can sit side by side.
+
+In this mode there is no automatic sync - you drop a file when you want to be seen, and you
+import when you want to see. Undo history and attribution still work; the conflict dialog
+belongs to the folder and server modes.
+
 ### Sync server
 
 A small server is included for teams who cannot use a folder (Firefox), or who would rather
@@ -179,7 +204,7 @@ wins over yours:
 
 * if the overwrite happened on *this* machine, your version is still in the local undo
   history - `Ctrl-Z`, or the board menu's **Undo**;
-* otherwise, restore from the last `.nbx` you exported (**Export this board...**).
+* otherwise, restore from the last `.nbx` you exported (**Export all boards...**).
 
 That is why the conflict dialog offers **Export mine first** and **Keep both**.
 
@@ -190,7 +215,9 @@ That is why the conflict dialog offers **Export mine first** and **Keep both**.
 * Written for desktop and keyboard/mouse use
 * Essentially untested on mobile devices and against tap/touch input
 * Works in Firefox, tested in Chrome, should work in Safari and may work in Edge (or what it's called now)
-* Uses localStorage for storing boards/lists/notes, so be careful around [clearing your cache](https://stackoverflow.com/questions/9948284/how-persistent-is-localstorage)
+* Uses localStorage for storing boards/lists/notes, so be careful around [clearing your cache](https://stackoverflow.com/questions/9948284/how-persistent-is-localstorage).
+  If a machine wipes site data on every restart, folder sync has nothing to hold on to there -
+  use **Import boards...** / **Export all boards...** instead, which need no stored state.
 
 You spot a bug, file an issue.
 

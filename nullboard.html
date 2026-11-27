@@ -1695,9 +1695,9 @@
 				<!-- here'll be boards -->
 			</div>
 
-			<a href=# class=exp-board>Export current board...</a>
+			<a href=# class=exp-board>Export all boards...</a>
 			<a href=# class=imp-board>Import boards...</a>
-				<input class=imp-board-select type="file" accept=".nbx">
+				<input class=imp-board-select type="file" accept=".nbx" multiple>
 
 			<a href=# class=auto-backup>Auto-backup...</a>
 
@@ -4759,33 +4759,43 @@
 	/*
 	 *	board export / import
 	 */
+	/*
+	 *	all boards in one file. In a team folder that is one file per person, so the name says
+	 *	who dropped it and when - no file overwrites another. One board on its own is exported
+	 *	from the board menu.
+	 */
 	function exportBoard()
 	{
-		var blob, file;
-
-		if (! NB.board)
+		// a wiped browser has no name, and the file name is how the team tells whose drop it is
+		if (! NB.who())
 		{
-			var index = NB.storage.getBoardIndex();
-			var all = [];
+			var who = (prompt('Your name - it goes in the file name, so the team can tell whose drop it is') || '').trim();
 
-			boards.forEach(function(meta, board_id){
-				all.push( NB.storage.loadBoard(board_id, null) );
-			})
+			if (who)
+			{
+				var conf = NB.storage.getConfig().sync;
+				conf.who = who;
 
-			blob = JSON.stringify(all);
-			file = `Nullboard.nbx`;
-		}
-		else
-		{
-			var board = NB.board;
-			blob = JSON.stringify(board);
-			file = `Nullboard-${board.id}-${board.title}.nbx`;
+				NB.storage.saveConfig();
+				syncConfUiLoad();
+			}
 		}
 
-		blob = encodeURIComponent(blob);
-		blob = "data:application/octet-stream," + blob;
+		var all = [];
 
-		return { blob: blob, file: file };
+		NB.storage.getBoardIndex().forEach(function(meta, board_id){
+			all.push( NB.storage.loadBoard(board_id, null) );
+		});
+
+		var who = (NB.who() || 'unnamed').replace(/[^A-Za-z0-9._-]+/g, '-');
+		var now = new Date();
+		var pad = function(n){ return (n < 10 ? '0' : '') + n; };
+
+		var stamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`
+		          + `-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+		return { blob: 'data:application/octet-stream,' + encodeURIComponent(JSON.stringify(all)),
+		         file: `nullboard-${who}-${stamp}.nbx` };
 	}
 
 	function checkImport(foo)
@@ -4805,106 +4815,106 @@
 		return null;
 	}
 
-	function importBoard(blob)
+	/*
+	 *	a .nbx holds one board or many, and in a team folder there is one file per person, so
+	 *	this takes several files and merges them. A board we already have is only replaced by
+	 *	a copy with a newer last-edit time - never by an older one, and never re-titled. Edit
+	 *	times, not revisions: revisions count per browser, not per board.
+	 */
+	function importBoards(texts)
 	{
-		var data;
+		var data = [];
+		var byId = new Map();
 
-		try
+		for (var i=0; i<texts.length; i++)
 		{
-			data = JSON.parse(blob);
-		}
-		catch (x)
-		{
-			alert('File is not in a valid JSON format.');
-			return false;
-		}
+			var one;
 
-		if (! Array.isArray(data))
-			data = [ data ];
+			try
+			{
+				one = JSON.parse(texts[i]);
+			}
+			catch (x)
+			{
+				alert('File is not in a valid JSON format.');
+				return false;
+			}
 
-		var index = NB.storage.getBoardIndex();
-		var msg, one, all = '';
+			data = data.concat(Array.isArray(one) ? one : [ one ]);
+		}
 
 		for (var i=0; i<data.length; i++)
 		{
-			var board = data[i];
-
+			var board  = data[i];
 			var whoops = checkImport(board);
+
 			if (whoops)
 			{
 				alert(whoops);
 				return false;
 			}
 
-			var title = board.title || '(untitled board)';
-			one =  `"${title}", ID ${board.id}, revision ${board.revision}`;
-			all += `    ID ${board.id}, revision ${board.revision} - "${title}"    \n`;
+			// the same board can be in two people's files - keep the newer copy of it
+			var prev = byId.get(board.id);
+
+			if (! prev || (board.at || 0) > (prev.at || 0))
+				byId.set(board.id, board);
 		}
 
-		if (data.length == 1) msg = `Import a board called ${one} ?`;
-		else                  msg = `About to import the following boards:\n\n${all}\nProceed?`;
+		var index  = NB.storage.getBoardIndex();
+		var plan   = [];
+		var report = '';
 
-		if (! confirm(msg))
+		byId.forEach(function(board){
+
+			var have = index.has(board.id) ? NB.storage.loadBoard(board.id, null) : null;
+			var how  = 'new';
+
+			if (have)
+				how = (board.at || 0) > (have.at || 0) ? 'newer' : 'older';
+
+			if (how != 'older')
+			{
+				if (! have)
+				{
+					var retitle = false;
+					index.forEach(function(meta){ retitle |= (meta.title == board.title) });
+
+					if (retitle) board.title += ' (imported)';
+				}
+
+				plan.push(board);
+			}
+
+			report += `    ${how.padEnd(6)} ${board.title || '(untitled board)'}`
+			        + ` - ${board.at ? relTime(board.at) : 'no edit time'}\n`;
+		});
+
+		if (! plan.length)
+			return alert('Nothing to import - every board in these files is older than yours.'
+			           + '\n\n' + report);
+
+		if (! confirm(`Import ${plan.length} board(s) ?\n\n${report}`))
 			return false;
 
-		var to_open = '';
-
-		for (var i=0; i<data.length; i++)
+		for (var i=0; i<plan.length; i++)
 		{
-			var board = data[i];
-			var check_title = true;
-
-			// check ID
-
-			if (index.has(board.id))
-			{
-				var which = (data.length == 1) ? "with the same ID" : board.id;
-
-				if (confirm(`Board ${which} already exists. Overwrite it?`) &&
-				    confirm(`OVERWRITE for sure?`))
-				{
-					console.log(`Import: ${board.id} (${board.title} - will overwrite existing one`);
-					check_title = false;
-				}
-				else
-				if (confirm(`Import the board under a new ID?`))
-				{
-					var new_id = +new Date();
-					console.log(`Import: ${board.id} (${board.title} - will import as ${new_id}`);
-					board.id = new_id;
-				}
-				else
-				{
-					console.log(`Import: ${board.id} (${board.title} - ID conflict, will not import`);
-					continue;
-				}
-			}
-
-			if (check_title)
-			{
-				var retitle = false;
-				index.forEach( have => { retitle |= (have.title == board.title) } );
-
-				if (retitle) board.title += ' (imported)';
-			}
-
-			// ok, do the deed
+			var board = plan[i];
 
 			board.revision--; // save will ++ it back
 
-			if (! NB.storage.saveBoard(board)) // this updates 'index'
+			if (! NB.storage.saveBoard(board))
 			{
 				alert(`Failed to save board ${board.id}. Import failed.`);
 				return false;
 			}
 
-			if (NB.sync) // otherwise an imported board sits local-only until someone edits it
+			if (NB.sync && NB.sync.enabled) // otherwise an imported board sits local-only until edited
 				NB.sync.touch(board.id);
-
-			if (! to_open) to_open = data[0].id;
 		}
 
-		if (to_open) openBoard(to_open);
+		updateBoardIndex();
+		openBoard(plan[0].id);
 	}
 
 	/*
@@ -5338,8 +5348,7 @@
 
 		if (! empty)
 		{
-			if (id_now) $export.html('Export this board...').show();
-			else        $export.html('Export all boards...').show();
+			$export.show();
 			$backup.show();
 		}
 		else
@@ -6312,12 +6321,17 @@
 		return false;
 	});
 
-	$('.config .imp-board-select').on('change' , function(){
-		var files = this.files;
-		var reader = new FileReader();
-		reader.onload = function(ev){ importBoard(ev.target.result); };
-		reader.readAsText(files[0]);
-		return true;
+	$('.config .imp-board-select').on('change' , async function(){
+		var files = Array.from(this.files || []);
+		var texts = [];
+
+		for (var i=0; i<files.length; i++)
+			texts.push(await files[i].text());
+
+		this.value = '';		// picking the same files again must still fire this
+
+		if (texts.length)
+			importBoards(texts);
 	});
 
 	$('.config .exp-board').on('click', function(){
@@ -6486,7 +6500,7 @@
 	var NB =
 	{
 		codeVersion: 20231105,
-		version: '0.6.1',                  // this fork, shown next to the logo
+		version: '0.7.0',                  // this fork, shown next to the logo
 		blobVersion: 20190412, // board blob format in Storage
 		board: null,
 		storage: null,

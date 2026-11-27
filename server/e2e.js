@@ -486,21 +486,23 @@ async function main()
 
 		console.log('\n13. .nbx export still round-trips');
 
-		const nbx = await cdp.eval(`
+		const pack = await cdp.eval(`
 			(function(){
-				var pack = exportBoard();
-				return decodeURIComponent(pack.blob.split(',').slice(1).join(','));
+				var p = exportBoard();
+				return { file: p.file, json: decodeURIComponent(p.blob.split(',').slice(1).join(',')) };
 			})()
 		`);
 
-		const parsed = JSON.parse(nbx);
-		check(parsed.id == boardId, 'the export contains the open board', parsed.id);
+		const parsed = JSON.parse(pack.json);
+		const exported = parsed.find(b => b.id == boardId);
 
-		const copy = Object.assign({}, parsed, { id: Number(boardId) + 1, title: 'Round trip' });
+		check(!! exported, 'the export contains the open board', parsed.map(b => b.id).join(','));
+
+		const copy = Object.assign({}, exported, { id: Number(boardId) + 1, title: 'Round trip' });
 
 		await cdp.eval(`
 			window.confirm = function(){ return true };
-			importBoard(${JSON.stringify(JSON.stringify(copy))});
+			importBoards([${JSON.stringify(JSON.stringify([ copy ]))}]);
 		`);
 
 		const imported = await waitFor(async () => {
@@ -774,6 +776,120 @@ async function main()
 		check(attributedNotes.find(n => n.text == 'alice note v2').by == 'alice', 'the file keeps per-note authors');
 		check(attributedNotes.find(n => n.text == 'bob note').by == 'bob', 'each note keeps its own, not the last writer');
 		check(attributed.data.by == 'alice', 'and the board itself records who saved it', attributed.data.by);
+
+		/*
+		 *	a team whose browsers do not allow folder access: one .nbx per person in a shared
+		 *	folder instead. The merge rule is the part that can lose work, so it gets tested.
+		 */
+		console.log('\n16. export and import without a folder');
+
+		await setName('alice');
+
+		const drop1     = await cdp.eval('exportBoard()');
+		const dropped   = JSON.parse(decodeURIComponent(drop1.blob.replace('data:application/octet-stream,', '')));
+		const indexSize = await cdp.eval('NB.storage.getBoardIndex().size');
+
+		check(/^nullboard-alice-\d{4}-\d\d-\d\d-\d{4}\.nbx$/.test(drop1.file),
+			'the file is named after who dropped it and when', drop1.file);
+		check(dropped.length == indexSize, 'and carries every board', `${dropped.length} of ${indexSize}`);
+
+		// a browser whose storage was wiped has no name left - the file name still matters
+		await cdp.eval(`
+			var c = NB.storage.getConfig().sync; c.who = ''; NB.storage.saveConfig();
+			window.prompt = function(){ return 'carla'; };
+		`);
+
+		const named = await cdp.eval('exportBoard()');
+		check(/^nullboard-carla-\d{4}-/.test(named.file),
+			'an unnamed browser asks who it is before dropping a file', named.file);
+
+		// one board, as another person's file would carry it
+		const tpl = dropped.find(b => b.lists && b.lists.length) || dropped[0];
+
+		const asBoard = (id, title, at, note) => {
+			const b = JSON.parse(JSON.stringify(tpl));
+
+			b.id = id; b.title = title; b.at = at; b.by = 'bob'; b.revision = 1;
+			b.lists = b.lists.slice(0, 1);
+			b.lists[0].notes = [ { text: note, raw: false, min: false, by: 'bob', at: at } ];
+
+			return JSON.stringify([ b ]);
+		};
+
+		const drop = texts => cdp.eval(`
+			window.confirm = function(){ return true; };
+			window.alert   = function(m){ window.__lastAlert = m; };
+			importBoards(${JSON.stringify(texts)});
+		`);
+
+		const noteOf = id => cdp.eval(`
+			(function(){
+				var b = NB.storage.loadBoard(${JSON.stringify(id)}, null);
+				return b ? b.lists[0].notes[0].text : '(no board)';
+			})()
+		`);
+
+		const now = Date.now();
+
+		await drop([ asBoard('e2e-imported', 'from bob', now - 60000, 'bob was here') ]);
+
+		check(await cdp.eval(`NB.storage.getBoardIndex().has('e2e-imported')`),
+			'a board from a file we never had is imported');
+		check(await noteOf('e2e-imported') == 'bob was here', 'with its notes', await noteOf('e2e-imported'));
+
+		await drop([ asBoard('e2e-imported', 'from bob', now - 300000, 'an older copy') ]);
+
+		check(await noteOf('e2e-imported') == 'bob was here',
+			'an older copy of it does not overwrite the board we have', await noteOf('e2e-imported'));
+		check(/Nothing to import/.test(await cdp.eval('window.__lastAlert || ""')),
+			'and the app says so instead of asking', await cdp.eval('window.__lastAlert'));
+
+		await drop([ asBoard('e2e-imported', 'from bob', now, 'the newest copy') ]);
+
+		check(await noteOf('e2e-imported') == 'the newest copy',
+			'a newer copy does replace it', await noteOf('e2e-imported'));
+
+		// two people's files can hold the same board - the newer copy must win
+		await drop([ asBoard('e2e-twice', 'in two files', now - 60000, 'the older file'),
+		             asBoard('e2e-twice', 'in two files', now, 'the newer file') ]);
+
+		check(await noteOf('e2e-twice') == 'the newer file',
+			'the same board in two files: the newer one wins', await noteOf('e2e-twice'));
+
+		// the real path a user takes: pick several files in the file dialog at once
+		const f1 = path.join(dataDir, 'drop-one.nbx');
+		const f2 = path.join(dataDir, 'drop-two.nbx');
+
+		await fsp.writeFile(f1, asBoard('e2e-picked-a', 'picked file a', now, 'from picked a'));
+		await fsp.writeFile(f2, asBoard('e2e-picked-b', 'picked file b', now, 'from picked b'));
+
+		const doc = await cdp.send('DOM.getDocument');
+		const inp = await cdp.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: '.config .imp-board-select' });
+
+		await cdp.send('DOM.setFileInputFiles', { nodeId: inp.nodeId, files: [ f1, f2 ] });
+		await cdp.eval(`$('.config .imp-board-select').trigger('change')`);
+
+		const bothPicked = await waitFor(async () => {
+			const n = await cdp.eval(`
+				['e2e-picked-a', 'e2e-picked-b'].filter(function(id){
+					return NB.storage.getBoardIndex().has(id);
+				}).length
+			`);
+			return n == 2 ? n : null;
+		}, 10000, 'both picked files to be imported').catch(() => 0);
+
+		check(bothPicked == 2, 'picking several files imports all of them', bothPicked);
+
+		// the whole cycle: our own export cannot clobber the newer copies we have
+		const beforeReimport = await cdp.eval('NB.storage.getBoardIndex().size');
+
+		await drop([ JSON.stringify(dropped) ]);
+
+		check(await cdp.eval(`NB.storage.getBoardIndex().size`) == beforeReimport,
+			'an exported set imports back without losing or doubling a board',
+			await cdp.eval('NB.storage.getBoardIndex().size'));
+		check(/Nothing to import/.test(await cdp.eval('window.__lastAlert || ""')),
+			'and does not roll back the newer copies it already had', await cdp.eval('window.__lastAlert'));
 	}
 	finally
 	{

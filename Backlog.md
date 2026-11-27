@@ -422,6 +422,46 @@ trip through the shared file (`data.lists[].notes[].by` and `data.by`).
 
 ---
 
+## Phase 8 — File drops where the folder picker is blocked — ✅ DONE
+
+Reported from the office: `Choose shared folder...` answers `NotAllowedError: The request is
+not allowed by the user agent or the platform in the current context`. That is the browser
+refusing the File System Access API for that page - an enterprise policy or a blocked
+`file editing` site setting - and it cannot be worked around from the page. The same machine
+writes and reads `.nbx` files without complaint, so the team folder becomes a file exchange.
+
+- [x] **Export all boards...** always exports the whole set, named
+      `nullboard-<name>-<YYYY-MM-DD-HHmm>.nbx`, so one file per person per day lands in the
+      folder and no file ever overwrites another. (A single board is still exported from the
+      conflict dialog's *export mine*.)
+- [x] **Import boards...** takes **several files at once** (`multiple` on the input, read
+      with `File.text()`), because dropping a whole folder in one go is the whole point.
+- [x] If the browser has no name (a profile wiped on restart), **Export** asks for one before
+      writing the file - otherwise every drop on such a machine is `nullboard-unnamed-...` and
+      the team cannot tell whose it is. No new storage: the answer goes to `conf.sync.who` as
+      usual and is asked again after the next wipe.
+- [x] Merge rule: **last edit time wins**, not revision. Revisions count per browser
+      (`saveBoard()` assigns `meta.history[0] + 1`), so they are not comparable across
+      machines - `at` is. A local board is replaced only by a file copy with a later `at`;
+      anything older is reported as `older` and left alone. The same board arriving in two
+      files is collapsed to the newest copy before anything is written.
+- [x] One confirm for the whole import, listing each board as `new` / `newer` / `older` with
+      its edit time - instead of the three dialogs per conflicting board it used to ask.
+      Nothing is renamed or given a new id on conflict any more; a genuinely new board whose
+      title is taken gets ` (imported)`.
+- [x] Not done, on purpose: no `webkitdirectory` folder import, no owner field, no
+      "export only my boards". All three are wants, not needs; the merge rule already makes
+      repeated full-set exports harmless.
+
+Verified in `server/e2e.js` step 16 (11 checks): the file is named after who dropped it and
+when and carries every board; a board from a file we never had is imported with its notes; an
+older copy does not overwrite the local board and says `Nothing to import`; a newer copy does
+replace it; the same board in two files resolves to the newer one; picking two files in the
+dialog imports both; and importing our own export neither loses, duplicates nor rolls back a
+board.
+
+---
+
 ## Dropped — do not re-add
 
 Costed in the previous plan, worthless at this cadence:
@@ -463,6 +503,8 @@ Costed in the previous plan, worthless at this cadence:
 | localStorage as cache grows unbounded (50 revs × boards) | low | `maxUndo` already caps it per board |
 | Concurrent local edit + poll overwrite | high | `isBusyEditing()` guard, plus the editor never forces a render of a dirty board |
 | Bodies are whole-board blobs; a 60 s-old client can clobber one field | medium | accepted at this cadence (UC2). Revisit only if dialogs become routine |
+| A policy blocks the File System Access API on a machine | high | folder mode is dead there; `.nbx` file drops (phase 8) need only the ordinary file chooser. Measured, not assumed - that is how the office machine behaves |
+| Machine wipes site data on restart | medium | the folder handle and the name are gone, so folder mode costs one folder pick per day there; file drops need no stored state at all |
 
 ---
 
@@ -490,6 +532,7 @@ Costed in the previous plan, worthless at this cadence:
 | M4 (Ph 5) | offline/reconnect + two-browser tests | 0.5 d | ✅ |
 | M5 (Ph 6) | shared-folder sync, no server process anywhere | 1 d | ✅ |
 | M6 (Ph 7) | per-note and per-board attribution | 0.5 d | ✅ |
+| M7 (Ph 8) | team file exchange where the folder picker is blocked | 0.5 d | ✅ |
 
 
 **~5-6 dev-days to a working multi-user board**, offline behaviour preserved. Roughly half
