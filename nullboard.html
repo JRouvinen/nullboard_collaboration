@@ -1919,6 +1919,26 @@
 		nbFatal('jQuery did not load');
 
 	/*
+	 *	NotAllowedError is the browser refusing folder access for this page - a policy or a
+	 *	site setting, not a gesture problem. Say so, and say where to look.
+	 */
+	function folderHelp(x)
+	{
+		if (x && x.name == 'NotAllowedError')
+			return 'The browser is refusing folder access for this page. That is a policy or a '
+			     + 'site setting, not a broken button, and only whoever administers the browser '
+			     + 'can lift it.\n\n'
+			     + 'Check in this browser:\n'
+			     + '  chrome://policy - any FileSystem... entries?\n'
+			     + '  chrome://settings/content/filesystem - is file editing blocked?\n'
+			     + '(edge:// for the same pages on Edge)\n\n'
+			     + 'For a report: ' + location.href + '\nsecure context: ' + isSecureContext;
+
+		return 'Chrome and Edge only allow this from a real click, and some work environments '
+		     + 'block it entirely. Mapping the share to a drive letter often helps.';
+	}
+
+	/*
 	 *	one click to let sync write to the shared folder again. Chrome forgets the grant
 	 *	when the page is reloaded, and requestPermission() needs a real gesture.
 	 */
@@ -3383,10 +3403,13 @@
 				var why = (x && (x.name + ': ' + x.message)) || String(x);
 
 				this.setStatus('error', 'cannot open a folder - ' + why);
-				alert('Could not open a folder.\n\n' + why +
-					'\n\nChrome and Edge only allow this from a real click, and some work ' +
-					'environments block it entirely. Mapping the share to a drive letter ' +
-					'often helps.');
+
+				console.error('[nullboard] showDirectoryPicker failed', {
+					href: location.href, secureContext: isSecureContext,
+					userAgent: navigator.userAgent, error: why
+				});
+
+				alert('Could not open a folder.\n\n' + why + '\n\n' + folderHelp(x));
 			}
 
 			await idbPut('folder', dir);
@@ -6463,7 +6486,7 @@
 	var NB =
 	{
 		codeVersion: 20231105,
-		version: '0.6.0',                  // this fork, shown next to the logo
+		version: '0.6.1',                  // this fork, shown next to the logo
 		blobVersion: 20190412, // board blob format in Storage
 		board: null,
 		storage: null,
